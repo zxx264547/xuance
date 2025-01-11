@@ -14,42 +14,49 @@ class IEEE13(RawMultiAgentEnv):
     def __init__(self, env_config, v0=1, vmax=1.05, vmin=0.95):
         super(IEEE13, self).__init__()
         self.obs_dim = 5
-        self.action_dim = 2
+        # 定义智能体动作空间：13个智能体的动作空间为1维，3个智能体的动作空间为2维
+        self.action_dims = [1] * 13 + [2] * 3
         # 初始化电网
-        self.network = create_123bus()
-        self.injection_bus = np.array([10, 11, 16, 20, 33, 36, 48, 59, 66, 75, 83, 92, 104, 61]) - 1
+        self.injection_bus = np.array([10, 11, 16, 20, 33, 39, 48, 59, 66, 75, 83, 92, 104, 20, 30, 41]) - 1
+        self.network = create_123bus(self.injection_bus)
 
         self.env_id = env_config.env_id
         self.num_agents = len(self.injection_bus)
         self.agents = [f"agent_{i}" for i in range(self.num_agents)]
         self.state_space = Box(-np.inf, np.inf, shape=[self.obs_dim, ])
         self.observation_space = {agent: Box(-np.inf, np.inf, shape=[self.obs_dim, ]) for agent in self.agents}
-        self.action_space = {agent: Box(-np.inf, np.inf, shape=[self.action_dim, ]) for agent in self.agents}
+        self.action_space = {
+            agent: Box(-np.inf, np.inf, shape=[self.action_dims[i], ]) for i, agent in enumerate(self.agents)
+        }
         self._current_step = 0
         # 将节点和智能体一一对应
         self.agent_to_bus = dict(zip(self.agents, self.injection_bus))
         self.v0 = v0
         self.vmax = vmax
         self.vmin = vmin
+
         self.load0_p = np.copy(self.network.load['p_mw'])
         self.load0_q = np.copy(self.network.load['q_mvar'])
         self.gen0_p = np.copy(self.network.sgen['p_mw'])
         self.gen0_q = np.copy(self.network.sgen['q_mvar'])
+
         self.state = {}
-        self.load_p = pd.read_csv('F:/xuance\myCode\data\load_p.csv')
-        self.load_q = pd.read_csv('F:/xuance\myCode\data\load_q.csv')
-        self.pv_p = pd.read_csv('F:/xuance\myCode\data\PV_p')
+        self.load_p = pd.read_csv('F:/xuance\myCode\data\处理后的负载数据.csv', header=None)
+        # self.load_q = pd.read_csv('F:/xuance\myCode\data\load_q.csv')
+        self.pv_p = pd.read_csv('F:/xuance\myCode\data\处理后的光伏数据.csv', header=None)
+        self.selected_loads_index = []
+        self.selected_pvs_index = []
 
-        self.max_episode_steps = self.load_p.size - 1
+        self.max_episode_steps = 96 - 1
 
 
-        # 初始化 TensorBoard 的 SummaryWriter
-        # 获取当前时间并格式化为字符串
-        current_time = datetime.now().strftime("%Y%m%d-%H%M%S")
-        # 在 "logs/IEEE13" 下创建一个带时间戳的子文件夹
-        base_log_dir = "logs/IEEE13"
-        log_dir = os.path.join(base_log_dir, current_time)
-        self.writer = SummaryWriter(log_dir)
+        # # 初始化 TensorBoard 的 SummaryWriter
+        # # 获取当前时间并格式化为字符串
+        # current_time = datetime.now().strftime("%Y%m%d-%H%M%S")
+        # # 在 "logs/IEEE13" 下创建一个带时间戳的子文件夹
+        # base_log_dir = "logs/IEEE13"
+        # log_dir = os.path.join(base_log_dir, current_time)
+        # self.writer = SummaryWriter(log_dir)
 
     def get_env_info(self):
         return {'state_space': self.state_space,
@@ -81,20 +88,11 @@ class IEEE13(RawMultiAgentEnv):
         self.network.load['p_mw'] = 0.0
         self.network.load['q_mvar'] = 0.0
 
-        # self.network.sgen.at[0, 'p_mw'] = -0.8 * np.random.uniform(15, 60)
-        self.network.sgen.at[1, 'p_mw'] = -0.8 * np.random.uniform(10, 45)
-        self.network.sgen.at[2, 'p_mw'] = -0.8 * np.random.uniform(10, 55)
-        self.network.sgen.at[3, 'p_mw'] = -0.8 * np.random.uniform(10, 30)
-        self.network.sgen.at[4, 'p_mw'] = -0.6 * np.random.uniform(1, 35)
-        self.network.sgen.at[5, 'p_mw'] = -0.5 * np.random.uniform(2, 25)
-        self.network.sgen.at[6, 'p_mw'] = -0.8 * np.random.uniform(2, 30)
-        self.network.sgen.at[7, 'p_mw'] = -0.9 * np.random.uniform(1, 10)
-        self.network.sgen.at[8, 'p_mw'] = -0.7 * np.random.uniform(1, 15)
-        self.network.sgen.at[9, 'p_mw'] = -0.5 * np.random.uniform(1, 30)
-        self.network.sgen.at[10, 'p_mw'] = -0.3 * np.random.uniform(1, 20)
-        self.network.sgen.at[11, 'p_mw'] = -0.5 * np.random.uniform(1, 20)
-        self.network.sgen.at[12, 'p_mw'] = -0.4 * np.random.uniform(1, 20)
-        self.network.sgen.at[13, 'p_mw'] = -0.4 * np.random.uniform(2, 10)
+        num_load_nodes = len(self.network.load)  # 获取负载节点的数量
+        self.selected_loads_index = np.random.choice(np.arange(len(self.load_p.columns)), size=num_load_nodes, replace=False)
+
+        self.selected_pvs_index = np.random.choice(np.arange(len(self.pv_p.columns)), size=self.num_agents, replace=False)
+
         # 进行潮流计算
         pp.runpp(self.network, algorithm='bfsw', init='dc')
 
@@ -128,17 +126,21 @@ class IEEE13(RawMultiAgentEnv):
             action = action_dict[agent]
             # 将动作值赋给 `self.network.sgen` 的 q_mvar 列
             if action is not None:
-                # 将动作值赋给 self.network.sgen 的 q_mvar 列
-                self.network.sgen.at[i, 'q_mvar'] = action[0]
-                # self.network.sgen.at[i, 'p_mw'] = self.pv_p['0'][self._current_step] / 50
-                self.network.sgen.at[i, 'p_mvar'] = action[1]
+                # 根据动作维度分别处理
+                if self.action_dims[i] == 1:  # 1维动作
+                    # 将动作值赋给 self.network.sgen 的 q_mvar 列
+                    self.network.sgen.at[i, 'q_mvar'] = action[0]
+                    self.network.sgen.at[i, 'p_mw'] = self.pv_p.iloc[self._current_step, self.selected_pvs_index[i]]
+                elif self.action_dims[i] == 2:  # 2维动作
+                    self.network.sgen.at[i, 'q_mvar'] = action[0]
+                    self.network.sgen.at[i, 'p_mw'] = action[1]
             else:
                 print(f"No action found for {agent}")
 
         # 设置每个节点的负载功率
-        for index in self.network.load.index:
-            self.network.load.at[index, 'p_mw'] = self.load_p['0'][self._current_step] / 50
-            self.network.load.at[index, 'q_mvar'] = self.load_q['0'][self._current_step] / 50
+        for i, index in enumerate(self.network.load.index):
+            self.network.load.at[index, 'p_mw'] = self.load_p.iloc[self._current_step, self.selected_loads_index[i]]
+            self.network.load.at[index, 'q_mvar'] = self.load_p.iloc[self._current_step, self.selected_loads_index[i]] * 0.2
         # self.writer.add_scalar(f"load_p", self.load_p['p'][self._current_step, 0] / 50, self._current_step)
         # self.writer.add_scalar(f"load_q", self.load_q['q'][self._current_step, 0] / 50, self._current_step)
         # self.writer.add_scalar(f"pv_p", self.pv_p['0'][self._current_step] / 50, self._current_step)
@@ -181,18 +183,20 @@ class IEEE13(RawMultiAgentEnv):
             total_violation = np.sum(np.maximum(self.network.res_bus.vm_pu.values - self.vmax, 0)
                                       + np.maximum(self.vmin - self.network.res_bus.vm_pu.values, 0))
             # 总网损
-            power_losses = self.network.res_line.pl_mw + self.network.res_line.ql_mvar
+            power_losses = self.network.res_line.pl_mw
             loss_penalty = -np.sum(power_losses)
 
             # 动作惩罚
             # Action cost (encourages small actions)
             # action_cost = -np.abs(action_dict[agent]) * 10
 
-            rewards[agent] = np.array(voltage_penalty + loss_penalty - total_violation).item()
+            rewards[agent] = np.array(-total_violation).item()
 
-        # 记录电压越限率和网损
-        self.writer.add_scalar(f"total_violation", total_violation, self._current_step)
-        self.writer.add_scalar(f"power_losses", power_losses.sum(), self._current_step)
+        # # 记录电压越限率和网损
+        # # self.writer.add_scalar(f"total_violation", total_violation, self._current_step)
+        # # self.writer.add_scalar(f"power_losses", power_losses.sum(), self._current_step)
+        # self.writer.add_scalar(f"total_violation", total_violation)
+        # self.writer.add_scalar(f"power_losses", power_losses.sum())
 
         # 初始化每个智能体的 terminated 状态为 False
         terminated = {agent: False for agent in self.agents}
@@ -203,15 +207,22 @@ class IEEE13(RawMultiAgentEnv):
         #         terminated[agent] = True
         truncated = False if self._current_step < self.max_episode_steps else True
 
-        # 记录每个节点的电压信息和每个智能体的动作到 TensorBoard
-        for agent_id, action in action_dict.items():
-            for i, action_value in enumerate(action):
-                self.writer.add_scalar(f"Agent_{agent_id}/Action_{i}", action_value, self._current_step)
+        # # 记录每个节点的电压信息和每个智能体的动作到 TensorBoard
+        # for agent_id, action in action_dict.items():
+        #     for i, action_value in enumerate(action):
+        #         # self.writer.add_scalar(f"Agent_{agent_id}/Action_{i}", action_value, self._current_step)
+        #         self.writer.add_scalar(f"Agent_{agent_id}/Action_{i}", action_value)
 
         # 自定义信息
+        mean_reward = 0
+        for agent in self.agents:
+            mean_reward = mean_reward + rewards[agent]
+        mean_reward = mean_reward / self.num_agents
         info = {
             "agent_actions": action_dict,
-            "current_step": self._current_step
+            "current_step": self._current_step,
+            "agent_action_space": self.action_space,
+            "power_losses": np.sum(power_losses)
         }
 
         return observation, rewards, terminated, truncated, info
@@ -220,18 +231,76 @@ class IEEE13(RawMultiAgentEnv):
         return np.ones([64, 64, 64])
 
     def close(self):
-        # 关闭 TensorBoard 记录器
-        self.writer.close()
+        return
 
-
-def create_123bus():
+def create_123bus(injection_bus):
     pp_net = pp.converter.from_mpc('F:/xuance/myCode/pandapower models/case_123.mat', casename_mpc_file='case_mpc')
+
+    # 获取电压等级信息
+    voltage_levels = pp_net.bus['vn_kv'].unique()  # 获取所有不同的电压等级
+    print("电压等级（kV）:", voltage_levels)
+    # 获取基准容量
+    base_capacity = pp_net.sn_mva  # 网络的基准容量（标幺基准容量）
+    print("基准容量（MVA）:", base_capacity)
 
     pp_net.sgen['p_mw'] = 0.0
     pp_net.sgen['q_mvar'] = 0.0
+    # 获取节点信息
+    print("\n节点信息：")
+    print(pp_net.bus[['name', 'vn_kv', 'zone', 'type']])
 
-    injection_bus = np.array([10, 11, 16, 20, 33, 36, 48, 59, 66, 75, 83, 92, 104, 61]) - 1
+    # 获取线路信息
+    print("\n线路信息：")
+    print(pp_net.line[['from_bus', 'to_bus', 'length_km', 'max_i_ka', 'r_ohm_per_km', 'x_ohm_per_km']])
+
+    # 获取变压器信息
+    print("\n变压器信息：")
+    print(pp_net.trafo[['hv_bus', 'lv_bus', 'sn_mva', 'vn_hv_kv', 'vn_lv_kv']])
+
+    # 获取负荷信息
+    print("\n负荷信息：")
+    print(pp_net.load[['bus', 'p_mw', 'q_mvar', 'scaling']])
+
+    # 获取发电机信息
+    print("\n发电机信息：")
+    print(pp_net.gen[['bus', 'p_mw', 'vm_pu', 'slack']])
+
+    # 获取开关信息
+    print("\n开关信息：")
+    print(pp_net.switch[['bus', 'element', 'closed']])
+
+    # 获取外部电网信息
+    print("\n外部电网信息：")
+    print(pp_net.ext_grid[['bus', 'vm_pu', 'va_degree']])
+
+    # 获取储能设备信息
+    if not pp_net.storage.empty:
+        print("\n储能设备信息：")
+        print(pp_net.storage[['bus', 'p_mw', 'q_mvar', 'max_e_mwh']])
+    else:
+        print("\n储能设备信息：无储能设备配置")
+
+    # 运行潮流计算
+    pp.runpp(pp_net)
+
+    # 打印运行结果
+    print("\n潮流计算结果：")
+    print("节点电压（标幺值）：")
+    print(pp_net.res_bus[['vm_pu', 'va_degree']])
+
+    print("\n线路负载情况：")
+    print(pp_net.res_line[['loading_percent']])
+
+    print("\n变压器负载情况：")
+    print(pp_net.res_trafo[['loading_percent']])
+
+    print("\n负荷功率：")
+    print(pp_net.res_load[['p_mw', 'q_mvar']])
+
+    print("\n发电机输出功率：")
+    print(pp_net.res_gen[['p_mw', 'q_mvar']])
+
     for bus in injection_bus:
-        pp.create_sgen(pp_net, bus, p_mw=1, q_mvar=0)
+        pp.create_sgen(pp_net, bus, p_mw=0.5, q_mvar=0)
 
     return pp_net

@@ -8,7 +8,6 @@ from xuance import get_configs
 from xuance.torch.agents.multi_agent_rl.maddpg_agents import MADDPG_Agents
 from xuance.torch.agents.multi_agent_rl.masac_agents import MASAC_Agents
 
-
 import argparse
 
 

@@ -100,6 +100,7 @@ class OffPolicyMARLAgents(MARLAgents):
 
     def init_rnn_hidden(self, n_envs):
         """
+
         Returns initialized hidden states of RNN if use RNN-based representations.
 
         Parameters:
@@ -245,6 +246,7 @@ class OffPolicyMARLAgents(MARLAgents):
         state = self.envs.buf_state.copy() if self.use_global_state else None
         for _ in tqdm(range(n_steps)):
             step_info = {}
+            single_step_info = {}
             policy_out = self.action(obs_dict=obs_dict, avail_actions_dict=avail_actions, test_mode=False)
             actions_dict = policy_out['actions']
             next_obs_dict, rewards_dict, terminated_dict, truncated, info = self.envs.step(actions_dict)
@@ -263,6 +265,29 @@ class OffPolicyMARLAgents(MARLAgents):
                 avail_actions = deepcopy(next_avail_actions)
 
             for i in range(self.n_envs):
+                self.log_infos({"power_losses": info[i]["power_losses"]}, self.current_step)
+                # for agent_keys in self.agent_keys:
+                #     # 获取当前智能体的动作信息和动作空间信息
+                #     agent_action = info[i]["agent_actions"][agent_keys]
+                #     agent_action_space = info[i]["agent_action_space"][agent_keys]  # 从 info 中获取动作空间
+                #
+                #     # 判断动作空间是 1 维还是 2 维
+                #     if agent_action_space.shape[0] == 1:  # 如果是 1 维动作空间
+                #         # 将动作直接记录为标量
+                #         single_step_info[f"Agent_actions/{agent_keys}/rank_{self.rank}/env_{i}"] = {
+                #             "episode-%d" % (self.current_step // 96): agent_action
+                #         }
+                #         self.log_infos(single_step_info, self.current_step)
+                #     elif agent_action_space.shape[0] == 2:  # 如果是 2 维动作空间
+                #         # 如果是二维动作，将其拆解为多个标量
+                #         for dim, agent_action in enumerate(agent_action):
+                #             single_step_info[f"Agent_actions/{agent_keys}/rank_{self.rank}/env_{i}/action_{dim}"] = {
+                #                 "episode-%d" % (self.current_step // 96): agent_action
+                #             }
+                #             self.log_infos(single_step_info, self.current_step)
+                #     else:
+                #         raise ValueError(f"Unsupported action space shape: {agent_action_space.shape}")
+
                 if all(terminated_dict[i].values()) or truncated[i]:
                     obs_dict[i] = info[i]["reset_obs"]
                     self.envs.buf_obs[i] = info[i]["reset_obs"]
@@ -276,8 +301,8 @@ class OffPolicyMARLAgents(MARLAgents):
                         step_info[f"Train-Results/Episode-Steps/rank_{self.rank}/env-%d" % i] = info[i]["episode_step"]
                         step_info[f"Train-Results/Episode-Rewards/rank_{self.rank}/env-%d" % i] = info[i]["episode_score"]
                     else:
-                        step_info[f"Train-Results/Episode-Steps/rank_{self.rank}"] = {
-                            "env-%d" % i: info[i]["episode_step"]}
+                        # step_info[f"Train-Results/Episode-Steps/rank_{self.rank}"] = {
+                        #     "env-%d" % i: info[i]["episode_step"]}
                         step_info[f"Train-Results/Episode-Rewards/rank_{self.rank}"] = {
                             "env-%d" % i: np.mean(itemgetter(*self.agent_keys)(info[i]["episode_score"]))}
                     self.log_infos(step_info, self.current_step)
@@ -316,6 +341,8 @@ class OffPolicyMARLAgents(MARLAgents):
 
         while episode_count < n_episodes:
             step_info = {}
+            single_step_info = {}
+
             policy_out = self.action(obs_dict=obs_dict,
                                      avail_actions_dict=avail_actions,
                                      rnn_hidden=rnn_hidden,
@@ -340,6 +367,11 @@ class OffPolicyMARLAgents(MARLAgents):
                 avail_actions = deepcopy(next_avail_actions)
 
             for i in range(num_envs):
+                for agent_keys in self.agent_keys:
+                    single_step_info[f"Agent_actions/{agent_keys}/rank_{self.rank}/env_{i}"] = {
+                        "episode-%d" % (self.current_step // 96): info[i]["agent_actions"][agent_keys]}
+                    self.log_infos(single_step_info, self.current_step % 96)
+
                 if all(terminated_dict[i].values()) or truncated[i]:
                     episode_count += 1
                     obs_dict[i] = info[i]["reset_obs"]
