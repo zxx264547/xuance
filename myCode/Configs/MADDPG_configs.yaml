@@ -6,9 +6,10 @@ render: False
 render_mode: 'human' # Choices: 'human', 'rgb_array'.
 fps: 0
 test_mode: False
+test: False
+
 device: "cuda:0"
 
-test: False
 
 agent: "MADDPG"  # the learning algorithms_marl
 env_name: "IEEE13"
@@ -37,18 +38,20 @@ learning_rate_critic: 0.001  # learning rate for critic
 gamma: 0.95  # discount factor
 tau: 0.001  # soft update for target networks
 
-start_noise: 1.0
-end_noise: 0.01
+start_noise: 0.05
+end_noise: 0.05
 sigma: 0.1  # random noise for continuous actions
-start_training: 1000  # start training after n episodes
-running_steps: 1000
+start_training: 100  # start training after n episodes
+running_steps: 10000
 #training_frequency: 25
 
 use_grad_clip: False
 grad_clip_norm: 0.5
 
-eval_interval: 10000
-test_episode: 5
+#eval_interval: 10000
+test_episode: 1
+test_steps: 10000
+
 
 use_obsnorm: True
 use_rewnorm: True
@@ -57,8 +60,7 @@ rewnorm_range: 5
 
 distributed_training: False
 
-test_steps: 10000
-log_dir: "./logs/maddpg/"
-model_dir: "./models/maddpg/"
+log_dir: "./logs/maddpg"
+model_dir: "./models/maddpg"
 
 

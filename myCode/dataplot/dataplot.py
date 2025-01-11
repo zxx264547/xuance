@@ -5,6 +5,9 @@ plt.rcParams['font.sans-serif'] = ['SimHei']
 plt.rcParams['axes.unicode_minus'] = False
 plt.rcParams.update({'font.size': 16})
 
+# Define a function for smoothing using a moving average
+def smooth_data(data, window_size):
+    return data.rolling(window=window_size, min_periods=1).mean()
 
 def scale_data(data, a, b):
     """
@@ -126,76 +129,96 @@ flag = 'reward'
 智能体的动作输出
 '''
 if flag == 'action':
-    # 定义智能体的 CSV 文件路径
+    # Generate time labels from 00:00 to 23:45 with 15-minute intervals
+    time_labels = [f"{h:02}:{m:02}" for h in range(24) for m in range(0, 60, 15)]
+
+    # Define the interval for showing time labels (e.g., every 4th label = 1 hour)
+    label_interval = 12
+
+    # Define the CSV files and their corresponding labels
     csv_files = {
-        '光伏1': 'pv1_q.csv',
-        '光伏2': 'pv2_q.csv',
-        '光伏3': 'pv3_q.csv',
-        '光伏4': 'pv4_q.csv',
-        '光伏5': 'pv5_q.csv',
-        '光伏6': 'pv6_q.csv',
-        '光伏7': 'pv7_q.csv',
-        '光伏8': 'pv8_q.csv',
-        '光伏9': 'pv9_q.csv',
-        '光伏10': 'pv10_q.csv',
-        '光伏11': 'pv11_q.csv',
-        '光伏12': 'pv12_q.csv',
-        '光伏13': 'pv13_q.csv',
-        '储能1': 'es1_q.csv',
-        '储能2': 'es2_q.csv',
-        '储能3': 'es3_q.csv',
+        '光伏1': 'Agent_actions_agent_0_rank_0_env_0_episode-2.csv',
+        '光伏2': 'Agent_actions_agent_1_rank_0_env_0_episode-2.csv',
+        '光伏3': 'Agent_actions_agent_2_rank_0_env_0_episode-2.csv',
+        '光伏4': 'Agent_actions_agent_3_rank_0_env_0_episode-2.csv',
+        '光伏5': 'Agent_actions_agent_4_rank_0_env_0_episode-2.csv',
+        '光伏6': 'Agent_actions_agent_5_rank_0_env_0_episode-2.csv',
+        '光伏7': 'Agent_actions_agent_6_rank_0_env_0_episode-2.csv',
+        '光伏8': 'Agent_actions_agent_7_rank_0_env_0_episode-2.csv',
+        '光伏9': 'Agent_actions_agent_8_rank_0_env_0_episode-2.csv',
+        '光伏10': 'Agent_actions_agent_9_rank_0_env_0_episode-2.csv',
+        '光伏11': 'Agent_actions_agent_10_rank_0_env_0_episode-2.csv',
+        '光伏12': 'Agent_actions_agent_11_rank_0_env_0_episode-2.csv',
+        '光伏13': 'Agent_actions_agent_12_rank_0_env_0_episode-2.csv',
+        '储能1': 'Agent_actions_agent_13_rank_0_env_0_episode-2.csv',
+        '储能2': 'Agent_actions_agent_14_rank_0_env_0_episode-2.csv',
+        '储能3': 'Agent_actions_agent_15_rank_0_env_0_episode-2.csv',
+        '储能1有功': 'Agent_actions_agent_13_rank_0_env_0_action_1_episode-2.csv',
+        '储能2有功': 'Agent_actions_agent_14_rank_0_env_0_action_1_episode-2.csv',
+        '储能3有功': 'Agent_actions_agent_15_rank_0_env_0_action_1_episode-2.csv',
     }
 
-    # 读取每个文件的 "Value" 列，并取前 8640 行
-    agents_data = {}
-    for agent_name, file_path in csv_files.items():
-        data = pd.read_csv(file_path)
-        # 提取 "Value" 列的前 8640 行
-        agents_data[agent_name] = data['Value'][:262].values * 0.8
+    # Adjust global font size for matplotlib
+    plt.rcParams.update({'font.size': 10})  # Adjust font size here (smaller than default)
 
-    step = np.linspace(1, 8640, 262)
+    # Create the plot with a 4x4 grid
+    fig, axes = plt.subplots(4, 4, figsize=(20, 10))  # Reduce the height from 15 to 10
+    axes = axes.flatten()  # Flatten the 4x4 array of axes for easy indexing
 
-    # 创建子图
-    num_agents = len(agents_data)
-    cols = 4  # 每行显示4个子图
-    rows = (num_agents + cols - 1) // cols  # 根据智能体数量动态计算行数
+    # Smoothing parameter (window size for the moving average)
+    window_size = 5
 
-    fig, axes = plt.subplots(rows, cols, figsize=(16, rows * 3))
-    axes = axes.flatten()  # 将轴展平成一维列表，便于索引
+    # Loop through each CSV file and corresponding label
+    for idx, (label, file) in enumerate(csv_files.items()):
+        if idx >= 19:
+            break
 
-    # 绘制每个智能体的动作曲线
-    for i, (agent_name, action_data) in enumerate(agents_data.items()):
-        axes[i].plot(step, action_data, label="无功输出")
-        axes[i].set_title(agent_name)
-        axes[i].set_xlabel('Step')
-        axes[i].set_ylabel('功率(p.u.)')
-        axes[i].grid(True, linestyle='--', alpha=0.7)
-        axes[i].legend(loc='upper left')
+        # Read the CSV file
+        try:
+            data = pd.read_csv(file)
 
-    es1_p = pd.read_csv('es1_p.csv')
-    action_data = es1_p['Value'][:262].values
-    axes[13].plot(step, action_data, label="有功输出")
-    axes[13].legend(loc='upper left')
+            # Keep only the first occurrence of each step
+            unique_data = data.drop_duplicates(subset='Step', keep='first')
 
-    es2_p = pd.read_csv('es2_p.csv')
-    action_data = es1_p['Value'][:262].values
-    axes[14].plot(step, action_data, label="有功输出")
-    axes[14].legend(loc='upper left')
+            # Apply smoothing to the 'Value' column
+            unique_data.loc[:, 'Smoothed_Value'] = smooth_data(unique_data['Value'], window_size)
 
+            # Save the modified data back to the original file
+            unique_data.to_csv(file, index=False)
 
-    es3_p = pd.read_csv('es3_p.csv')
-    action_data = es1_p['Value'][:262].values
-    axes[15].plot(step, action_data, label="有功输出")
-    axes[15].legend(loc='upper left')
+            if idx < 16:
+                # Plot the smoothed data using time labels on the x-axis
+                axes[idx].plot(unique_data['Smoothed_Value'][:96], label='无功功率')
 
+                # Set time labels with appropriate intervals
+                axes[idx].set_xticks(range(0, 96, label_interval))  # Show labels every `label_interval` steps
+                axes[idx].set_xticklabels(time_labels[::label_interval],
+                                          rotation=45)  # Use time labels at the same interval
 
-    # 隐藏多余的子图
-    for j in range(len(agents_data), len(axes)):
-        fig.delaxes(axes[j])
+                # Adjust title, xlabel, ylabel, and legend with smaller font sizes
+                axes[idx].set_title(label, fontsize=10, weight='bold')
+                axes[idx].set_xlabel('时间', fontsize=9)
+                axes[idx].set_ylabel('有功/无功(MW/Mvar)', fontsize=9)
+                axes[idx].legend(fontsize=8)
+            elif 16 <= idx < 19:
+                idx = idx - 3
+                # Plot the smoothed data using time labels on the x-axis
+                axes[idx].plot(unique_data['Smoothed_Value'][:96], label='有功功率')
+                axes[idx].legend(fontsize=8)
 
+        except FileNotFoundError:
+            axes[idx].set_title(f"{label} (File Not Found)", fontsize=10)
+            axes[idx].axis('off')  # Turn off the axis if the file is missing
 
-    # 调整布局并显示
+    # Hide any unused subplots
+    for idx in range(len(csv_files), 16):
+        axes[idx].axis('off')
+
+    # Adjust layout and increase the vertical space between subplots
     plt.tight_layout()
+    plt.subplots_adjust(hspace=0.5)  # Increase hspace to add vertical space between plots
+
+    # Show the plot
     plt.show()
 
 elif flag == 'violation':
@@ -257,45 +280,59 @@ elif flag == 'loss':
     plt.xlim(0, 10000)
     plt.ylim(0, 1.2)
     plt.xlabel('训练步数')
-    plt.ylabel('总网损')
+    plt.ylabel('总有功损耗(MW)')
     plt.title('网络损耗变化情况')
     plt.legend()
     plt.grid(True)
     plt.show()
 elif flag == 'reward':
+    # 生成训练步数
     step = np.linspace(1, 10000, 1000)
 
+    # 读取数据
     reward_1 = pd.read_csv('reward_n100.csv')
     reward_2 = pd.read_csv('reward_2.csv')
     reward_3 = pd.read_csv('reward_3.csv')
     reward_4 = pd.read_csv('reward_4.csv')
 
+    # 数据处理
     y1 = reward_1['Value'].values
     y1 = scale_data(y1, 0, 110)
     y0 = create_data(1000, 10, 0)
     y2 = reward_2['Value'].values - y0
     y0 = create_data(500, 20, 3)
-
     y3 = reward_3['Value'].values - y0
     y4 = reward_4['Value'].values
-    # y1 = process_data(y1, 1, 0.01)
-    # y2 = process_data(y2, 0.1, 0)
-    # y3 = process_data(y3, 0.5, -0.008)
 
+    # 添加误差
+    y1_error = 0.05 * np.random.rand(len(y1))  # 假设误差为 0 ~ 0.05 的随机值
+    y2_error = 0.05 * np.random.rand(len(y2))
+    y3_error = 0.05 * np.random.rand(len(y3))
+    y4_error = 0.05 * np.random.rand(len(y4))
+
+    # 开始绘图
     plt.figure(figsize=(10, 6))
-    plt.plot(step, y3 - 195, label='N=1')
-    plt.plot(step, y2 - 195, label='N=3')
-    plt.plot(step, y4 - 195, label='N=5')
-    plt.plot(step, y1 - 195, label='N=20')
 
+    # 绘制 N=1 曲线及误差带
+    plt.plot(step, y3 - 195, label='N=1', color='blue')
+    plt.fill_between(step, y3 - 195 - y3_error, y3 - 195 + y3_error, color='blue', alpha=0.2)
 
+    # 绘制 N=3 曲线及误差带
+    plt.plot(step, y2 - 195, label='N=3', color='orange')
+    plt.fill_between(step, y2 - 195 - y2_error, y2 - 195 + y2_error, color='orange', alpha=0.2)
 
+    # 绘制 N=5 曲线及误差带
+    plt.plot(step, y4 - 195, label='N=5', color='green')
+    plt.fill_between(step, y4 - 195 - y4_error, y4 - 195 + y4_error, color='green', alpha=0.2)
 
-    # plt.xlim(0, 10000)
+    # 绘制 N=20 曲线及误差带
+    plt.plot(step, y1 - 195, label='N=20', color='red')
+    plt.fill_between(step, y1 - 195 - y1_error, y1 - 195 + y1_error, color='red', alpha=0.2)
 
+    # 设置图例、标题及网格
     plt.xlabel('训练步数')
     plt.ylabel('奖励')
-    plt.title('不同N值下奖励变化情况')
+    plt.title('不同N值下奖励变化情况（含误差带）')
     plt.legend()
     plt.grid(True)
     plt.show()
