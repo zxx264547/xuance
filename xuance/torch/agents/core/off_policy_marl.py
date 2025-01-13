@@ -244,6 +244,7 @@ class OffPolicyMARLAgents(MARLAgents):
         obs_dict = self.envs.buf_obs
         avail_actions = self.envs.buf_avail_actions if self.use_actions_mask else None
         state = self.envs.buf_state.copy() if self.use_global_state else None
+        episode_power_loss = 0
         for _ in tqdm(range(n_steps)):
             step_info = {}
             single_step_info = {}
@@ -265,7 +266,6 @@ class OffPolicyMARLAgents(MARLAgents):
                 avail_actions = deepcopy(next_avail_actions)
 
             for i in range(self.n_envs):
-                self.log_infos({"power_losses": info[i]["power_losses"]}, self.current_step)
                 # for agent_keys in self.agent_keys:
                 #     # 获取当前智能体的动作信息和动作空间信息
                 #     agent_action = info[i]["agent_actions"][agent_keys]
@@ -287,6 +287,7 @@ class OffPolicyMARLAgents(MARLAgents):
                 #             self.log_infos(single_step_info, self.current_step)
                 #     else:
                 #         raise ValueError(f"Unsupported action space shape: {agent_action_space.shape}")
+                episode_power_loss = episode_power_loss + info[i]['power_loss']
 
                 if all(terminated_dict[i].values()) or truncated[i]:
                     obs_dict[i] = info[i]["reset_obs"]
@@ -305,6 +306,10 @@ class OffPolicyMARLAgents(MARLAgents):
                         #     "env-%d" % i: info[i]["episode_step"]}
                         step_info[f"Train-Results/Episode-Rewards/rank_{self.rank}"] = {
                             "env-%d" % i: np.mean(itemgetter(*self.agent_keys)(info[i]["episode_score"]))}
+                        step_info["Train-Results/Episode-PowerLoss"] = {
+                            "env-%d" % i: episode_power_loss}
+
+                        episode_power_loss = 0
                     self.log_infos(step_info, self.current_step)
 
             self.current_step += self.n_envs
@@ -329,6 +334,7 @@ class OffPolicyMARLAgents(MARLAgents):
         obs_dict, info = envs.reset()
         state = envs.buf_state.copy() if self.use_global_state else None
         avail_actions = envs.buf_avail_actions if self.use_actions_mask else None
+        episode_power_loss = 0
         if test_mode:
             if self.config.render_mode == "rgb_array" and self.render:
                 images = envs.render(self.config.render_mode)
@@ -341,8 +347,6 @@ class OffPolicyMARLAgents(MARLAgents):
 
         while episode_count < n_episodes:
             step_info = {}
-            single_step_info = {}
-
             policy_out = self.action(obs_dict=obs_dict,
                                      avail_actions_dict=avail_actions,
                                      rnn_hidden=rnn_hidden,
@@ -367,10 +371,13 @@ class OffPolicyMARLAgents(MARLAgents):
                 avail_actions = deepcopy(next_avail_actions)
 
             for i in range(num_envs):
-                for agent_keys in self.agent_keys:
-                    single_step_info[f"Agent_actions/{agent_keys}/rank_{self.rank}/env_{i}"] = {
-                        "episode-%d" % (self.current_step // 96): info[i]["agent_actions"][agent_keys]}
-                    self.log_infos(single_step_info, self.current_step % 96)
+                # 这里用于记录一个episode之内的数据变化，即24h的数据变化，每一个数据点为一个step
+                # 记录每个episode的网损
+                # single_step_info[f"Train-Results/episode-{info[i]['current_step']}"] = {
+                #     f"power_loss": info[i]['power_loss']}
+                # self.log_infos(single_step_info, info[i]['current_step'])
+
+                episode_power_loss = episode_power_loss + info[i]['power_loss']
 
                 if all(terminated_dict[i].values()) or truncated[i]:
                     episode_count += 1
@@ -405,9 +412,13 @@ class OffPolicyMARLAgents(MARLAgents):
                             step_info["Train-Results/Episode-Steps/env-%d" % i] = info[i]["episode_step"]
                             step_info["Train-Results/Episode-Rewards/env-%d" % i] = info[i]["episode_score"]
                         else:
-                            step_info["Train-Results/Episode-Steps"] = {"env-%d" % i: info[i]["episode_step"]}
+                            # step_info["Train-Results/Episode-Steps"] = {"env-%d" % i: info[i]["episode_step"]}
                             step_info["Train-Results/Episode-Rewards"] = {
                                 "env-%d" % i: np.mean(itemgetter(*self.agent_keys)(info[i]["episode_score"]))}
+                            step_info["Train-Results/Episode-PowerLoss"] = {
+                                "env-%d" % i: episode_power_loss}
+
+                        episode_power_loss = 0
                         self.current_step += info[i]["episode_step"]
                         self.log_infos(step_info, self.current_step)
                         self._update_explore_factor()

@@ -7,6 +7,8 @@ import pandapower as pp
 from scipy.io import loadmat
 from datetime import datetime
 import os
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 
 
 
@@ -78,9 +80,7 @@ class IEEE13(RawMultiAgentEnv):
         return self.state_space.sample()
 
     def reset(self):
-        # observation = {agent: self.observation_space[agent].sample() for agent in self.agents}
         info = {}
-
         self._current_step = 0
 
         self.network.sgen['p_mw'] = 0.0
@@ -88,9 +88,8 @@ class IEEE13(RawMultiAgentEnv):
         self.network.load['p_mw'] = 0.0
         self.network.load['q_mvar'] = 0.0
 
-        num_load_nodes = len(self.network.load)  # 获取负载节点的数量
-        self.selected_loads_index = np.random.choice(np.arange(len(self.load_p.columns)), size=num_load_nodes, replace=False)
-
+        # 每次重置环境，随机选取光伏和负载曲线（随机选取表格中的列）
+        self.selected_loads_index = np.random.choice(np.arange(len(self.load_p.columns)), size=len(self.network.load), replace=False)
         self.selected_pvs_index = np.random.choice(np.arange(len(self.pv_p.columns)), size=self.num_agents, replace=False)
 
         # 进行潮流计算
@@ -141,9 +140,6 @@ class IEEE13(RawMultiAgentEnv):
         for i, index in enumerate(self.network.load.index):
             self.network.load.at[index, 'p_mw'] = self.load_p.iloc[self._current_step, self.selected_loads_index[i]]
             self.network.load.at[index, 'q_mvar'] = self.load_p.iloc[self._current_step, self.selected_loads_index[i]] * 0.2
-        # self.writer.add_scalar(f"load_p", self.load_p['p'][self._current_step, 0] / 50, self._current_step)
-        # self.writer.add_scalar(f"load_q", self.load_q['q'][self._current_step, 0] / 50, self._current_step)
-        # self.writer.add_scalar(f"pv_p", self.pv_p['0'][self._current_step] / 50, self._current_step)
 
         # 进行潮流计算
         pp.runpp(self.network, algorithm='bfsw', init='dc')
@@ -169,7 +165,7 @@ class IEEE13(RawMultiAgentEnv):
             observation[agent] = self.state[self.agent_to_bus[agent]]
 
         # 计算rewards = 智能体自己的电压越限 + 所有节点的电压越限 + 总网损
-        total_violation = 0
+        total_violation_penalty = 0
         power_losses = 0
         rewards = {}
         for agent in self.agents:
@@ -178,129 +174,72 @@ class IEEE13(RawMultiAgentEnv):
             low_voltage_violation = max(self.vmin - voltage, 0)
             high_voltage_violation = max(voltage - self.vmax, 0)
             voltage_violation_self = low_voltage_violation + high_voltage_violation
-            voltage_penalty = -voltage_violation_self * 1000
+            voltage_penalty = -voltage_violation_self
+
             # 所有节点的电压越限
-            total_violation = np.sum(np.maximum(self.network.res_bus.vm_pu.values - self.vmax, 0)
+            total_violation_penalty = -np.sum(np.maximum(self.network.res_bus.vm_pu.values - self.vmax, 0)
                                       + np.maximum(self.vmin - self.network.res_bus.vm_pu.values, 0))
             # 总网损
             power_losses = self.network.res_line.pl_mw
-            loss_penalty = -np.sum(power_losses)
+            loss_penalty = -np.sum(power_losses) * 0.1
 
-            # 动作惩罚
-            # Action cost (encourages small actions)
-            # action_cost = -np.abs(action_dict[agent]) * 10
-
-            rewards[agent] = np.array(-total_violation).item()
-
-        # # 记录电压越限率和网损
-        # # self.writer.add_scalar(f"total_violation", total_violation, self._current_step)
-        # # self.writer.add_scalar(f"power_losses", power_losses.sum(), self._current_step)
-        # self.writer.add_scalar(f"total_violation", total_violation)
-        # self.writer.add_scalar(f"power_losses", power_losses.sum())
+            rewards[agent] = np.array(total_violation_penalty + loss_penalty).item()
 
         # 初始化每个智能体的 terminated 状态为 False
         terminated = {agent: False for agent in self.agents}
-        # # 遍历每个智能体的电压状态，检查是否在指定的范围内
-        # for agent in self.agents:
-        #     # 判断当前智能体的电压是否在 0.9499 到 1.0501 之间
-        #     if 0.9499 <= observation[agent][2] <= 1.0501:
-        #         terminated[agent] = True
         truncated = False if self._current_step < self.max_episode_steps else True
 
-        # # 记录每个节点的电压信息和每个智能体的动作到 TensorBoard
-        # for agent_id, action in action_dict.items():
-        #     for i, action_value in enumerate(action):
-        #         # self.writer.add_scalar(f"Agent_{agent_id}/Action_{i}", action_value, self._current_step)
-        #         self.writer.add_scalar(f"Agent_{agent_id}/Action_{i}", action_value)
-
-        # 自定义信息
-        mean_reward = 0
-        for agent in self.agents:
-            mean_reward = mean_reward + rewards[agent]
-        mean_reward = mean_reward / self.num_agents
         info = {
             "agent_actions": action_dict,
             "current_step": self._current_step,
             "agent_action_space": self.action_space,
-            "power_losses": np.sum(power_losses)
+            "power_loss": np.sum(power_losses)
         }
 
         return observation, rewards, terminated, truncated, info
 
     def render(self, *args, **kwargs):
-        return np.ones([64, 64, 64])
+        # 获取节点电压（p.u.）
+        node_voltages = self.network.res_bus.vm_pu  # 每个节点的电压（p.u.）
+        nodes = self.network.bus.index  # 节点索引
+        # 绘图
+        # 1. 创建 Matplotlib 图像
+        fig, ax = plt.subplots(figsize=(8, 6))
+
+        ax.plot(nodes, node_voltages, 'b-o', label="Node Voltages")  # 节点电压分布
+        ax.axhline(y=1.05, color='r', linestyle='--', label="Upper Limit (1.05 p.u.)")  # 电压上限
+        ax.axhline(y=0.95, color='r', linestyle='--', label="Lower Limit (0.95 p.u.)")  # 电压下限
+        plt.xlabel("Node Index")
+        plt.ylabel("Voltage (p.u.)")
+        ax.set_title("Voltage Distribution")
+        ax.legend()
+        plt.ylim(0.9, 1.1)
+        # 2. 使用 FigureCanvas 将绘图渲染为 NumPy 数组
+        canvas = FigureCanvas(fig)
+        canvas.draw()
+
+        # 3. 获取渲染后的图像数据（RGB）
+        img = np.frombuffer(canvas.tostring_rgb(), dtype='uint8')
+        img = img.reshape(canvas.get_width_height()[::-1] + (3,))  # 转换为 (height, width, 3)
+
+        # 4. 关闭 Matplotlib 图以节省内存
+        plt.close(fig)
+        return img
 
     def close(self):
         return
 
 def create_123bus(injection_bus):
     pp_net = pp.converter.from_mpc('F:/xuance/myCode/pandapower models/case_123.mat', casename_mpc_file='case_mpc')
+    for bus in injection_bus:
+        pp.create_sgen(pp_net, bus, p_mw=0, q_mvar=0)
 
-    # 获取电压等级信息
+    # 电网模型信息
     voltage_levels = pp_net.bus['vn_kv'].unique()  # 获取所有不同的电压等级
     print("电压等级（kV）:", voltage_levels)
-    # 获取基准容量
     base_capacity = pp_net.sn_mva  # 网络的基准容量（标幺基准容量）
     print("基准容量（MVA）:", base_capacity)
-
-    pp_net.sgen['p_mw'] = 0.0
-    pp_net.sgen['q_mvar'] = 0.0
-    # 获取节点信息
-    print("\n节点信息：")
-    print(pp_net.bus[['name', 'vn_kv', 'zone', 'type']])
-
-    # 获取线路信息
-    print("\n线路信息：")
-    print(pp_net.line[['from_bus', 'to_bus', 'length_km', 'max_i_ka', 'r_ohm_per_km', 'x_ohm_per_km']])
-
-    # 获取变压器信息
-    print("\n变压器信息：")
-    print(pp_net.trafo[['hv_bus', 'lv_bus', 'sn_mva', 'vn_hv_kv', 'vn_lv_kv']])
-
-    # 获取负荷信息
-    print("\n负荷信息：")
-    print(pp_net.load[['bus', 'p_mw', 'q_mvar', 'scaling']])
-
-    # 获取发电机信息
-    print("\n发电机信息：")
-    print(pp_net.gen[['bus', 'p_mw', 'vm_pu', 'slack']])
-
-    # 获取开关信息
-    print("\n开关信息：")
-    print(pp_net.switch[['bus', 'element', 'closed']])
-
-    # 获取外部电网信息
-    print("\n外部电网信息：")
-    print(pp_net.ext_grid[['bus', 'vm_pu', 'va_degree']])
-
-    # 获取储能设备信息
-    if not pp_net.storage.empty:
-        print("\n储能设备信息：")
-        print(pp_net.storage[['bus', 'p_mw', 'q_mvar', 'max_e_mwh']])
-    else:
-        print("\n储能设备信息：无储能设备配置")
-
-    # 运行潮流计算
-    pp.runpp(pp_net)
-
-    # 打印运行结果
-    print("\n潮流计算结果：")
-    print("节点电压（标幺值）：")
-    print(pp_net.res_bus[['vm_pu', 'va_degree']])
-
-    print("\n线路负载情况：")
-    print(pp_net.res_line[['loading_percent']])
-
-    print("\n变压器负载情况：")
-    print(pp_net.res_trafo[['loading_percent']])
-
-    print("\n负荷功率：")
-    print(pp_net.res_load[['p_mw', 'q_mvar']])
-
-    print("\n发电机输出功率：")
-    print(pp_net.res_gen[['p_mw', 'q_mvar']])
-
-    for bus in injection_bus:
-        pp.create_sgen(pp_net, bus, p_mw=0.5, q_mvar=0)
+    # print("\n节点信息：")
+    # print(pp_net.bus[['name', 'vn_kv', 'zone', 'type']])
 
     return pp_net

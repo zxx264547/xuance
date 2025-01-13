@@ -1,18 +1,18 @@
 import os
-
 import numpy as np
 
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 from xuance.environment import make_envs
 from xuance import get_configs
-from xuance.torch.agents.multi_agent_rl.maddpg_agents import MADDPG_Agents
 import argparse
+from xuance.torch.agents import MASAC_Agents
+
 
 if __name__ == "__main__":
-    config_dict = get_configs(file_dir="Configs/MADDPG_configs.yaml")
+    config_dict = get_configs(file_dir="Configs/MASAC_configs.yaml")
     configs = argparse.Namespace(**config_dict)
     envs = make_envs(configs)
-    Agent = MADDPG_Agents(config=configs, envs=envs)
+    Agent = MASAC_Agents(config=configs, envs=envs)
     if configs.test:
         def env_fn():
             configs.parallels = configs.test_episode
