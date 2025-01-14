@@ -211,7 +211,7 @@ class IEEE13(RawMultiAgentEnv):
         ax.axhline(y=0.95, color='r', linestyle='--', label="Lower Limit (0.95 p.u.)")  # 电压下限
         plt.xlabel("Node Index")
         plt.ylabel("Voltage (p.u.)")
-        ax.set_title("Voltage Distribution")
+        ax.set_title(f"Voltage Distribution step={self._current_step}")
         ax.legend()
         plt.ylim(0.9, 1.1)
         # 2. 使用 FigureCanvas 将绘图渲染为 NumPy 数组

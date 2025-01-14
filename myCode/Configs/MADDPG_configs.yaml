@@ -7,18 +7,18 @@ logger: "tensorboard"  # Choices: tensorboard, wandb.
 wandb_user_name: "your_user_name"
 
 # 渲染与测试设置
-test_mode: True
-test: True
+test: False
 render: True
 render_mode: 'rgb_array' # Choices: 'human', 'rgb_array'.
 fps: 5
 
 # RNN设置
-use_rnn: True
+use_rnn: False
 rnn: "LSTM"
 fc_hidden_sizes: [128, 64]
 recurrent_hidden_size: 64
-representation: "Basic_RNN"
+#representation: "Basic_RNN"
+representation: "Basic_MLP"
 dropout: 0.1
 N_recurrent_layers: 2
 representation_hidden_size: [64,64]  # the units for each hidden layer
@@ -56,7 +56,7 @@ end_noise: 0.01
 sigma: 0.1  # random noise for continuous actions
 start_training: 1000  # start training after n episodes
 running_steps: 50000
-training_frequency: 1
+training_frequency: 5
 distributed_training: False
 
 use_grad_clip: True

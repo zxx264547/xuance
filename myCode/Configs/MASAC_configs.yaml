@@ -69,7 +69,7 @@ rewnorm_range: 1
 distributed_training: False
 
 test_steps: 10000
-log_dir: "./logs/MASAC/"
-model_dir: "./models/MASAC/"
+log_dir: "./logs/masac/"
+model_dir: "./models/masac/"
 
 

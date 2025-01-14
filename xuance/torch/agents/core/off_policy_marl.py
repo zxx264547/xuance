@@ -39,6 +39,8 @@ class OffPolicyMARLAgents(MARLAgents):
 
         self.buffer_size = self.config.buffer_size
         self.batch_size = self.config.batch_size
+        self.log_powerloss = []
+        self.log_reward = []
 
     def _build_memory(self):
         """Build replay buffer for models training
@@ -238,6 +240,9 @@ class OffPolicyMARLAgents(MARLAgents):
                         self.log_infos(train_info, self.current_step)
                     process_bar.update((self.current_step - step_last) // self.n_envs)
                     step_last = deepcopy(self.current_step)
+                # 手动记录数据的代码
+                np.save(f'F:/xuance/myCode/logs/log_reward_{self.config.agent}.npy', np.array(self.log_reward))
+                np.save(f'F:/xuance/myCode/logs/log_powerloss_{self.config.agent}.npy', np.array(self.log_powerloss))
                 process_bar.update(n_steps - process_bar.last_print_n)
             return
 
@@ -247,7 +252,7 @@ class OffPolicyMARLAgents(MARLAgents):
         episode_power_loss = 0
         for _ in tqdm(range(n_steps)):
             step_info = {}
-            single_step_info = {}
+            # single_step_info = {}
             policy_out = self.action(obs_dict=obs_dict, avail_actions_dict=avail_actions, test_mode=False)
             actions_dict = policy_out['actions']
             next_obs_dict, rewards_dict, terminated_dict, truncated, info = self.envs.step(actions_dict)
@@ -264,6 +269,11 @@ class OffPolicyMARLAgents(MARLAgents):
                 state = deepcopy(next_state)
             if self.use_actions_mask:
                 avail_actions = deepcopy(next_avail_actions)
+
+            if self.current_step >= n_steps - 1:
+                # 手动记录数据的代码
+                np.save(f'F:/xuance/myCode/logs/log_reward_{self.config.agent}.npy', np.array(self.log_reward))
+                np.save(f'F:/xuance/myCode/logs/log_powerloss_{self.config.agent}.npy', np.array(self.log_powerloss))
 
             for i in range(self.n_envs):
                 # for agent_keys in self.agent_keys:
@@ -308,6 +318,10 @@ class OffPolicyMARLAgents(MARLAgents):
                             "env-%d" % i: np.mean(itemgetter(*self.agent_keys)(info[i]["episode_score"]))}
                         step_info["Train-Results/Episode-PowerLoss"] = {
                             "env-%d" % i: episode_power_loss}
+                        # 手动记录数据
+                        self.log_reward.append([self.current_step, np.mean(
+                            itemgetter(*self.agent_keys)(info[i]["episode_score"]))])
+                        self.log_powerloss.append([self.current_step, episode_power_loss])
 
                         episode_power_loss = 0
                     self.log_infos(step_info, self.current_step)
@@ -417,6 +431,10 @@ class OffPolicyMARLAgents(MARLAgents):
                                 "env-%d" % i: np.mean(itemgetter(*self.agent_keys)(info[i]["episode_score"]))}
                             step_info["Train-Results/Episode-PowerLoss"] = {
                                 "env-%d" % i: episode_power_loss}
+                            # 手动记录数据
+                            self.log_reward.append([self.current_step, np.mean(
+                                itemgetter(*self.agent_keys)(info[i]["episode_score"]))])
+                            self.log_powerloss.append([self.current_step, episode_power_loss])
 
                         episode_power_loss = 0
                         self.current_step += info[i]["episode_step"]
